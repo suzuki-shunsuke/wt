@@ -1,0 +1,4 @@
+# The directory where repositories are located.
+# A repository is located at <root>/github.com/<owner>/<repo>,
+# and its worktrees at <root>/github.com/<owner>/<repo>+worktrees/<branch>.
+root: ~/repos/src
