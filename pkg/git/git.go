@@ -123,6 +123,29 @@ func (c *Client) AddWorktree(ctx context.Context, dir string, args ...string) er
 	return err //nolint:wrapcheck // Run already describes the failure.
 }
 
+// DefaultFetchRefspec is the refspec a normal clone configures for origin. It is
+// what makes refs/remotes/origin/* exist, and with it everything git does with a
+// remote-tracking branch — origin/<branch> as a name, --track, @{upstream}, a
+// bare `git fetch` — behaves the same on a bare hub as in a normal clone.
+const DefaultFetchRefspec = "+refs/heads/*:refs/remotes/origin/*"
+
+// FetchRefspec returns the fetch refspec configured for origin, or an empty
+// string when there is none. `git clone --bare` configures none.
+func (c *Client) FetchRefspec(ctx context.Context, dir string) string {
+	// A missing key exits non-zero, which is the answer rather than a failure.
+	out, err := c.runner.Run(ctx, dir, "config", "--get", "remote.origin.fetch")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// SetDefaultFetchRefspec configures the refspec a normal clone would have.
+func (c *Client) SetDefaultFetchRefspec(ctx context.Context, dir string) error {
+	_, err := c.runner.Run(ctx, dir, "config", "remote.origin.fetch", DefaultFetchRefspec)
+	return err //nolint:wrapcheck // Run already describes the failure.
+}
+
 // OriginURL returns the URL of the remote named origin of the repository at dir.
 func (c *Client) OriginURL(ctx context.Context, dir string) (string, error) {
 	out, err := c.runner.Run(ctx, dir, "remote", "get-url", "origin")

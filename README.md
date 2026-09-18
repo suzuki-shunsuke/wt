@@ -75,7 +75,11 @@ cd "$(wt add https://github.com/suzuki-shunsuke/wt/pull/1)"
 
 A branch named with digits can still be reached through its URL.
 
-A branch that exists only on origin is fetched first. A pull request from a fork is fetched through `refs/pull/<number>/head` and checked out as `pr-<number>`, because its head branch name belongs to the fork's namespace and may collide with a branch of yours.
+A branch that exists only on origin is fetched first, and the worktree is created tracking it.
+
+A hub created by `git clone --bare` has no fetch refspec, so nothing ever writes `refs/remotes/origin/*` and there is no `origin/<branch>` to track. When wt finds origin without a refspec, it configures the one a normal clone has — `+refs/heads/*:refs/remotes/origin/*` — and says so. A refspec that is already there is left alone.
+
+A pull request from a fork is fetched through `refs/pull/<number>/head` and checked out as `pr-<number>`, because its head branch name belongs to the fork's namespace and may collide with a branch of yours.
 
 If the branch already has a worktree, `wt add` prints its path and creates nothing, so it is safe to run again — including for a worktree that predates this layout.
 

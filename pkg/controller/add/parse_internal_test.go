@@ -22,8 +22,20 @@ type stubGit struct {
 	fetchErr  error
 	addErr    error
 
-	fetched string
-	added   []string
+	// fetchRefspec is what origin already has configured. Empty is a hub created
+	// by `git clone --bare`, which has none.
+	fetchRefspec string
+
+	fetched    string
+	added      []string
+	refspecSet bool
+}
+
+func (s *stubGit) FetchRefspec(_ context.Context, _ string) string { return s.fetchRefspec }
+
+func (s *stubGit) SetDefaultFetchRefspec(_ context.Context, _ string) error {
+	s.refspecSet = true
+	return nil
 }
 
 func (s *stubGit) OriginURL(_ context.Context, _ string) (string, error) {

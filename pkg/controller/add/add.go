@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/suzuki-shunsuke/slog-error/slogerr"
+	"github.com/suzuki-shunsuke/wt/pkg/git"
 )
 
 // errHubNotFound is returned when the repository is not on this machine. Cloning
@@ -120,10 +121,15 @@ func (c *Controller) createWorktree(ctx context.Context, logger *slog.Logger, hu
 		}
 	case c.input.Git.HasBranch(ctx, hub, branch):
 	default:
+		if err := c.ensureFetchRefspec(ctx, logger, hub); err != nil {
+			return err
+		}
 		logger.Info("fetching the branch from origin", "branch", branch)
 		if err := c.input.Git.Fetch(ctx, hub, branch); err != nil {
 			return fmt.Errorf("fetch the branch from origin: %w", slogerr.With(err, "branch", branch))
 		}
+		// --track makes the new branch follow origin, so git push and git pull in
+		// the worktree need no argument.
 		if err := c.input.Git.AddWorktree(ctx, hub, "--track", "-b", branch, dst, "origin/"+branch); err != nil {
 			return fmt.Errorf("add a worktree tracking origin: %w", slogerr.With(err, "branch", branch, "path", dst))
 		}
@@ -135,6 +141,32 @@ func (c *Controller) createWorktree(ctx context.Context, logger *slog.Logger, hu
 		return fmt.Errorf("add a worktree: %w", slogerr.With(err, "branch", branch, "path", dst))
 	}
 	logger.Info("the worktree has been created", "path", dst, "branch", branch)
+	return nil
+}
+
+// ensureFetchRefspec gives origin the fetch refspec a normal clone has, when it
+// has none.
+//
+// `git clone --bare`, which is how the hub of this layout is created, configures
+// no refspec, so nothing ever writes refs/remotes/origin/*. Without those refs
+// there is no origin/<branch> to branch from, --track has nothing to record, and
+// @{upstream} cannot be resolved, so a worktree for a branch that only exists
+// upstream could not be created at all.
+//
+// An existing refspec is left alone, including a narrower one somebody chose on
+// purpose. The change is logged rather than made quietly, because it is a change
+// to the user's repository, and it makes a plain `git fetch` in the hub start
+// populating remote-tracking branches as well.
+func (c *Controller) ensureFetchRefspec(ctx context.Context, logger *slog.Logger, hub string) error {
+	if c.input.Git.FetchRefspec(ctx, hub) != "" {
+		return nil
+	}
+	logger.Info("configuring the fetch refspec of origin, which this repository has none of, "+
+		"so that remote-tracking branches exist",
+		"repository", hub, "refspec", git.DefaultFetchRefspec)
+	if err := c.input.Git.SetDefaultFetchRefspec(ctx, hub); err != nil {
+		return fmt.Errorf("configure the fetch refspec of origin: %w", slogerr.With(err, "repository", hub))
+	}
 	return nil
 }
 

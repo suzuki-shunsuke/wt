@@ -70,11 +70,15 @@ func TestController_Run(t *testing.T) { //nolint:funlen,gocognit,cyclop // The l
 		pr  *github.PullRequest
 		// wantBranch is the branch whose worktree is expected, under <base>+worktrees.
 		wantBranch string
-		// wantAdd is the argument list expected of `git worktree add`.
-		wantAdd []string
 		// wantFetch is the refspec expected of `git fetch origin`.
 		wantFetch string
-		wantErr   string
+		// wantTrack asserts that the worktree was created with --track, which only a
+		// branch taken from origin should be.
+		wantTrack bool
+		// wantRefspecSet asserts that wt gave origin a fetch refspec because it had
+		// none.
+		wantRefspecSet bool
+		wantErr        string
 	}{
 		{
 			name:    "a repository that is not here reports the clone command",
@@ -111,6 +115,22 @@ func TestController_Run(t *testing.T) { //nolint:funlen,gocognit,cyclop // The l
 			},
 			wantBranch: "topic",
 			wantFetch:  "topic",
+			// The hub has no fetch refspec, as one created by `git clone --bare` does
+			// not, so wt has to configure one before origin/topic can exist.
+			wantRefspecSet: true,
+			wantTrack:      true,
+		},
+		{
+			name: "an existing fetch refspec is left alone",
+			arg:  "topic",
+			hub:  ".bare",
+			git: &stubGit{
+				originURL:    "https://github.com/o/r.git",
+				fetchRefspec: "+refs/heads/main:refs/remotes/origin/main",
+			},
+			wantBranch: "topic",
+			wantFetch:  "topic",
+			wantTrack:  true,
 		},
 		{
 			name:       "a pull request resolves to its head branch",
@@ -188,15 +208,15 @@ func TestController_Run(t *testing.T) { //nolint:funlen,gocognit,cyclop // The l
 			if tt.git.fetched != tt.wantFetch {
 				t.Errorf("fetched = %q, want %q", tt.git.fetched, tt.wantFetch)
 			}
-			wantAdd := tt.wantAdd
-			if wantAdd == nil {
-				wantAdd = []string{dst, tt.wantBranch}
-				if tt.wantFetch != "" && !strings.HasPrefix(tt.wantFetch, "refs/pull/") {
-					wantAdd = []string{"--track", "-b", tt.wantBranch, dst, "origin/" + tt.wantBranch}
-				}
+			wantAdd := []string{dst, tt.wantBranch}
+			if tt.wantTrack {
+				wantAdd = []string{"--track", "-b", tt.wantBranch, dst, "origin/" + tt.wantBranch}
 			}
 			if diff := cmp.Diff(wantAdd, tt.git.added); diff != "" {
 				t.Errorf("worktree add args mismatch (-want +got):\n%s", diff)
+			}
+			if tt.git.refspecSet != tt.wantRefspecSet {
+				t.Errorf("the fetch refspec was set = %v, want %v", tt.git.refspecSet, tt.wantRefspecSet)
 			}
 			// The parent of a branch name holding a slash has to exist before git runs.
 			if _, err := os.Stat(filepath.Dir(dst)); err != nil {
