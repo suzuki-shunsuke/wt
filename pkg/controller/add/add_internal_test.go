@@ -72,6 +72,9 @@ func TestController_Run(t *testing.T) { //nolint:funlen,gocognit,cyclop // The l
 		wantBranch string
 		// wantFetch is the refspec expected of `git fetch origin`.
 		wantFetch string
+		// wantCreate is the start point expected of a brand-new branch. Empty means
+		// the branch was not expected to be created from scratch.
+		wantCreate string
 		// wantTrack asserts that the worktree was created with --track, which only a
 		// branch taken from origin should be.
 		wantTrack bool
@@ -106,12 +109,25 @@ func TestController_Run(t *testing.T) { //nolint:funlen,gocognit,cyclop // The l
 			wantBranch: "feat/x",
 		},
 		{
+			name: "a branch that exists nowhere starts a new one from HEAD",
+			arg:  "brand-new",
+			hub:  ".bare",
+			git: &stubGit{
+				originURL:    "https://github.com/o/r.git",
+				remoteBranch: false,
+				headCommit:   "c0ffee",
+			},
+			wantBranch: "brand-new",
+			wantCreate: "c0ffee",
+		},
+		{
 			name: "a branch only on origin is fetched and tracked",
 			arg:  "topic",
 			hub:  ".bare",
 			git: &stubGit{
-				originURL: "https://github.com/o/r.git",
-				hasBranch: false,
+				originURL:    "https://github.com/o/r.git",
+				hasBranch:    false,
+				remoteBranch: true,
 			},
 			wantBranch: "topic",
 			wantFetch:  "topic",
@@ -127,6 +143,7 @@ func TestController_Run(t *testing.T) { //nolint:funlen,gocognit,cyclop // The l
 			git: &stubGit{
 				originURL:    "https://github.com/o/r.git",
 				fetchRefspec: "+refs/heads/main:refs/remotes/origin/main",
+				remoteBranch: true,
 			},
 			wantBranch: "topic",
 			wantFetch:  "topic",
@@ -209,6 +226,9 @@ func TestController_Run(t *testing.T) { //nolint:funlen,gocognit,cyclop // The l
 				t.Errorf("fetched = %q, want %q", tt.git.fetched, tt.wantFetch)
 			}
 			wantAdd := []string{dst, tt.wantBranch}
+			if tt.wantCreate != "" {
+				wantAdd = []string{"-b", tt.wantBranch, dst, tt.wantCreate}
+			}
 			if tt.wantTrack {
 				wantAdd = []string{"--track", "-b", tt.wantBranch, dst, "origin/" + tt.wantBranch}
 			}

@@ -146,6 +146,28 @@ func (c *Client) SetDefaultFetchRefspec(ctx context.Context, dir string) error {
 	return err //nolint:wrapcheck // Run already describes the failure.
 }
 
+// RemoteBranchExists reports whether origin has a branch of this name.
+//
+// It asks the remote rather than looking at refs/remotes/origin/*, which say
+// what the last fetch saw and are absent altogether on a hub created by
+// `git clone --bare`.
+func (c *Client) RemoteBranchExists(ctx context.Context, dir, branch string) (bool, error) {
+	out, err := c.runner.Run(ctx, dir, "ls-remote", "--heads", "origin", "refs/heads/"+branch)
+	if err != nil {
+		return false, err //nolint:wrapcheck // Run already describes the failure.
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
+// HeadCommit returns the commit HEAD points at in the repository at dir.
+func (c *Client) HeadCommit(ctx context.Context, dir string) (string, error) {
+	out, err := c.runner.Run(ctx, dir, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err //nolint:wrapcheck // Run already describes the failure.
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // OriginURL returns the URL of the remote named origin of the repository at dir.
 func (c *Client) OriginURL(ctx context.Context, dir string) (string, error) {
 	out, err := c.runner.Run(ctx, dir, "remote", "get-url", "origin")

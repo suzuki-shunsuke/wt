@@ -29,6 +29,8 @@ type Git interface {
 	AddWorktree(ctx context.Context, dir string, args ...string) error
 	FetchRefspec(ctx context.Context, dir string) string
 	SetDefaultFetchRefspec(ctx context.Context, dir string) error
+	RemoteBranchExists(ctx context.Context, dir, branch string) (bool, error)
+	HeadCommit(ctx context.Context, dir string) (string, error)
 	OriginURL(ctx context.Context, dir string) (string, error)
 }
 

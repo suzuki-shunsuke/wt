@@ -65,7 +65,7 @@ func (c *Controller) Run(ctx context.Context, logger *slog.Logger, input *InputA
 		return fmt.Errorf("check if the worktree path exists: %w", slogerr.With(err, "path", dst))
 	}
 
-	if err := c.createWorktree(ctx, logger, hub, dst, branch, refspec); err != nil {
+	if err := c.createWorktree(ctx, logger, hub, dst, branch, refspec, input.Dir); err != nil {
 		return err
 	}
 	return c.print(dst)
@@ -103,10 +103,11 @@ func (c *Controller) resolveBranch(ctx context.Context, logger *slog.Logger, t *
 // createWorktree creates the worktree at dst.
 //
 // A branch already on this machine is checked out as it is, without contacting
-// the remote, so that an offline or local-only branch works. Otherwise the branch
-// is fetched first and created tracking origin, which is what the user means by
-// naming a branch that only exists upstream.
-func (c *Controller) createWorktree(ctx context.Context, logger *slog.Logger, hub, dst, branch, refspec string) error {
+// the remote, so that an offline or local-only branch works. One that only
+// exists upstream is fetched first and created tracking origin. A name that is
+// nowhere yet starts a new branch, so that beginning a piece of work and
+// resuming someone else's are the same command.
+func (c *Controller) createWorktree(ctx context.Context, logger *slog.Logger, hub, dst, branch, refspec, dir string) error {
 	// git worktree add creates the intermediate directories itself, but only under
 	// a parent that exists; a branch name holding a slash needs the parent first.
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil { //nolint:mnd // The standard mode for a directory.
@@ -121,26 +122,64 @@ func (c *Controller) createWorktree(ctx context.Context, logger *slog.Logger, hu
 		}
 	case c.input.Git.HasBranch(ctx, hub, branch):
 	default:
-		if err := c.ensureFetchRefspec(ctx, logger, hub); err != nil {
-			return err
+		onOrigin, err := c.input.Git.RemoteBranchExists(ctx, hub, branch)
+		if err != nil {
+			return fmt.Errorf("check whether the branch exists on origin: %w", slogerr.With(err, "branch", branch))
 		}
-		logger.Info("fetching the branch from origin", "branch", branch)
-		if err := c.input.Git.Fetch(ctx, hub, branch); err != nil {
-			return fmt.Errorf("fetch the branch from origin: %w", slogerr.With(err, "branch", branch))
+		if !onOrigin {
+			return c.createBranch(ctx, logger, hub, dst, branch, dir)
 		}
-		// --track makes the new branch follow origin, so git push and git pull in
-		// the worktree need no argument.
-		if err := c.input.Git.AddWorktree(ctx, hub, "--track", "-b", branch, dst, "origin/"+branch); err != nil {
-			return fmt.Errorf("add a worktree tracking origin: %w", slogerr.With(err, "branch", branch, "path", dst))
-		}
-		logger.Info("the worktree has been created", "path", dst, "branch", branch)
-		return nil
+		return c.trackOrigin(ctx, logger, hub, dst, branch)
 	}
 
 	if err := c.input.Git.AddWorktree(ctx, hub, dst, branch); err != nil {
 		return fmt.Errorf("add a worktree: %w", slogerr.With(err, "branch", branch, "path", dst))
 	}
 	logger.Info("the worktree has been created", "path", dst, "branch", branch)
+	return nil
+}
+
+// trackOrigin brings a branch that only exists upstream in and creates its
+// worktree following origin, so that git push and git pull in it need no
+// argument.
+func (c *Controller) trackOrigin(ctx context.Context, logger *slog.Logger, hub, dst, branch string) error {
+	if err := c.ensureFetchRefspec(ctx, logger, hub); err != nil {
+		return err
+	}
+	logger.Info("fetching the branch from origin", "branch", branch)
+	if err := c.input.Git.Fetch(ctx, hub, branch); err != nil {
+		return fmt.Errorf("fetch the branch from origin: %w", slogerr.With(err, "branch", branch))
+	}
+	if err := c.input.Git.AddWorktree(ctx, hub, "--track", "-b", branch, dst, "origin/"+branch); err != nil {
+		return fmt.Errorf("add a worktree tracking origin: %w", slogerr.With(err, "branch", branch, "path", dst))
+	}
+	logger.Info("the worktree has been created", "path", dst, "branch", branch)
+	return nil
+}
+
+// createBranch starts a new branch at the HEAD of the directory the command was
+// run in and creates its worktree.
+//
+// A name that is neither here nor on origin is taken as "start this branch",
+// which is what `git switch -c` would do from the same place, rather than an
+// error. The start point is the caller's HEAD rather than the hub's, because the
+// hub of a bare clone sits on whatever branch it was cloned with, which is not
+// where the user is working.
+//
+// The new branch is announced, since this is also where a typo in an existing
+// branch name ends up, and a new branch nobody meant is easier to notice when it
+// is said out loud than when it quietly appears.
+func (c *Controller) createBranch(ctx context.Context, logger *slog.Logger, hub, dst, branch, dir string) error {
+	start, err := c.input.Git.HeadCommit(ctx, dir)
+	if err != nil {
+		return fmt.Errorf("resolve HEAD to start the branch from: %w", slogerr.With(err, "dir", dir))
+	}
+	if err := c.input.Git.AddWorktree(ctx, hub, "-b", branch, dst, start); err != nil {
+		return fmt.Errorf("add a worktree for a new branch: %w",
+			slogerr.With(err, "branch", branch, "path", dst, "start_point", start))
+	}
+	logger.Info("the branch does not exist here or on origin, so it has been created from HEAD",
+		"branch", branch, "start_point", start, "path", dst)
 	return nil
 }
 

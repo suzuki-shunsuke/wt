@@ -25,6 +25,11 @@ type stubGit struct {
 	// fetchRefspec is what origin already has configured. Empty is a hub created
 	// by `git clone --bare`, which has none.
 	fetchRefspec string
+	// remoteBranch is whether origin has a branch of the name being asked for.
+	remoteBranch bool
+	// headCommit is what HEAD resolves to where the command was run, which a new
+	// branch starts from.
+	headCommit string
 
 	fetched    string
 	added      []string
@@ -32,6 +37,14 @@ type stubGit struct {
 }
 
 func (s *stubGit) FetchRefspec(_ context.Context, _ string) string { return s.fetchRefspec }
+
+func (s *stubGit) RemoteBranchExists(_ context.Context, _, _ string) (bool, error) {
+	return s.remoteBranch, nil
+}
+
+func (s *stubGit) HeadCommit(_ context.Context, _ string) (string, error) {
+	return s.headCommit, nil
+}
 
 func (s *stubGit) SetDefaultFetchRefspec(_ context.Context, _ string) error {
 	s.refspecSet = true

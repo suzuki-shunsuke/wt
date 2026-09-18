@@ -79,6 +79,8 @@ A branch that exists only on origin is fetched first, and the worktree is create
 
 A hub created by `git clone --bare` has no fetch refspec, so nothing ever writes `refs/remotes/origin/*` and there is no `origin/<branch>` to track. When wt finds origin without a refspec, it configures the one a normal clone has — `+refs/heads/*:refs/remotes/origin/*` — and says so. A refspec that is already there is left alone.
 
+A name that exists neither here nor on origin starts a new branch at the HEAD of the directory you ran the command in — what `git switch -c` would do from the same place — so beginning a piece of work and resuming someone else's are the same command. wt says when it does this, since it is also where a typo in an existing branch name ends up.
+
 A pull request from a fork is fetched through `refs/pull/<number>/head` and checked out as `pr-<number>`, because its head branch name belongs to the fork's namespace and may collide with a branch of yours.
 
 If the branch already has a worktree, `wt add` prints its path and creates nothing, so it is safe to run again — including for a worktree that predates this layout.
